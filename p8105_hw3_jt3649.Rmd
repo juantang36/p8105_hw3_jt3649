@@ -102,3 +102,177 @@ instacart |>
   )
 ```
 
+### Problem 2
+Import zillow dataset
+```{r import_zillow_data}
+rental_df = read_csv("dataset/zillow_data/Zip_zori_uc_sfrcondomfr_sm_month_NYC.csv") |>
+  janitor::clean_names()
+zip_code = read_csv("dataset/zillow_data/Zip Codes.csv") |>
+  janitor::clean_names()
+```
+
+Clean and tidy Zipcode data
+```{r clean_zipcode}
+zip_code_clean = zip_code |>
+  mutate(
+    #add a borough column from county
+    borough = case_when(
+      str_detect(county, "New York") ~ "Manhattan", 
+      str_detect(county, "Kings") ~ "Brooklyn", 
+      str_detect(county, "Queens") ~ "Queens",
+      str_detect(county, "Bronx") ~ "Bronx", 
+      str_detect(county, "Richmond") ~ "Staten Island", 
+      TRUE ~ NA_character_
+    ), 
+    #unify the county names in zip_code_tidy
+    county = case_when(
+      str_detect(county, "New York") ~ "New York", 
+      str_detect(county, "Kings") ~ "Kings", 
+      str_detect(county, "Queens") ~ "Queens",
+      str_detect(county, "Bronx") ~ "Bronx", 
+      str_detect(county, "Richmond") ~ "Richmond", 
+      TRUE ~ county
+      )
+  )
+```
+
+Clean and tidy zillow rental data
+```{r clean_rental_df}
+rental_clean = rental_df |>
+  #reshape from wide to long format
+  pivot_longer(
+    cols = starts_with("x"), #select col starting with "x"
+    names_to = "date", 
+    values_to = "price"
+  ) |>
+  mutate(
+    #remove "x" prefix before the date
+    date = str_remove(date, "x"), 
+    #replace "_" with "-"
+    date = str_replace_all(date, "_", "-"), 
+    date = as.Date(date),
+    year = year(date), 
+    month = month(date)
+  ) |>
+  #filter out date not within 2015-01-01 and 2024-08-31 
+  filter(date >= as.Date("2015-01-01"), date <= as.Date("2024-08-31")) |>
+  rename(zip_code = region_name) |>
+  #standardize the county names in rental_price
+  mutate(
+    county_name = str_remove(county_name, "County$"), 
+    county_name = case_when(
+      county_name == "New York" ~ "New York", 
+      county_name == "Kings" ~ "Kings", 
+      county_name == "Queens" ~ "Queens", 
+      county_name == "Bronx" ~ "Bronx", 
+      county_name == "Richmond" ~ "Richmond", 
+      TRUE ~ county_name
+      ) 
+  ) |>
+  #remove zip codes that have no price data
+  filter(!is.na(price))
+```
+
+
+Merge rental and zipcode data
+```{r zillow_merged}
+zillow_merged = rental_clean |>
+  left_join(zip_code_clean, by = "zip_code")
+```
+
+  
+#### ZIP code observation frequency
+```{r zip_code_frequency}
+# count number of observations for each ZIP code
+zip_count = rental_clean |>
+  count(zip_code)
+zip_count
+
+# calculate the number of ZIP codes with complete data (116 observations)
+n_116_obs = sum(zip_count$n == 116)
+
+# calculate the number of ZIP codes with sparse data (<10 observations)
+n_less_10_obs = sum(zip_count$n < 10)
+```
+
+`r n_116_obs` ZIP codes are observed 116 times. `r n_less_10_obs` ZIP codes are observed fewer than 10 times. 
+Some ZIP codes are observed rarely because they may have been added to Zillow's coverage area more recently, or they may have missing data for certain months. It is also possible that areas with these ZIP codes have limited rental market data. 
+The complete observations (116) indicate consistent rental market activity and data collection throughout the entire period (2015-01-01 to 2024-08-31).
+
+
+#### Average rental price by borough and year
+```{r borough_year_table}
+zillow_merged |>
+  # group by borough and year
+  group_by(borough, year) |>
+  # calculate the mean price, removed price = NA
+  summarize(avg_price = mean(price, na.rm = TRUE)) |>
+  pivot_wider (
+    names_from = year, # year as col name
+    values_from = avg_price
+  ) |>
+  knitr::kable(
+    # round to integer
+    digits = 0, 
+    caption = "Average Rental Price by Borough and Year"
+  )
+```
+
+##### Comment on the trend: 
+The rental price have generally increased across all boroughs from 2015 to 2024. Manhattan consistently has the highest rental prices, followed by Brooklyn and Queens. Bronx and Staten Island have the most affordable rental prices. There is a growth in price for all five boroughs in 2021-2022. This can potentially due to the post-pandemic market changes. 
+
+#### Plot showing NYC Rental Prices within ZIP codes for all available years. 
+Your plot should facilitate comparisons across boroughs. Comment on any significant elements of this plot.
+```{r rental_price_plot}
+# create a line plot showing rental price changes over time by ZIP code
+rental_plot = zillow_merged |>
+  ggplot(aes(x = date, y = price, 
+             group = borough, # group by borough
+             color = borough) # use color to identify borough
+         ) + 
+  geom_line() + 
+  # create separate panels for each borough
+  facet_wrap(~borough, ncol = 2) + 
+  labs(
+    title = "NYC Rental Prices within ZIP Code Over Time", 
+    subtitle = "2015-2024", 
+    x = "Date", 
+    y = "Rental Price ($)", 
+    color = "Borough"
+  ) 
+rental_plot
+```
+##### Comment on the plot
+The plot shows general upward trends in rental prices across all five boroughs. Manhattan has the largest difference in price levels each year and has the greatest fluctuation in rental prices over the years. Manhattan, Brooklyn, and Queens have a noticeable drop in rental prices around 2021, which might be related to the pandemic. But the drop is followed by recovery and growth. Price data for Staten Island is the most limited. 
+
+
+#### Average rental price within each ZIP code over each month in 2023
+```{r avg_monthly_rental_price}
+dist_plot = zillow_merged |>
+  filter(year == 2023) |> # keep only 2023 data
+  # group by borough and zip_code
+  group_by(borough, zip_code) |>
+  # calculate avg price per ZIP code
+  summarize(avg_price = mean(price, na.rm = TRUE)) |>
+  ggplot(aes(x = borough, y = avg_price, fill = borough)) + 
+  geom_boxplot() + 
+  labs(
+    title = "Distribution of ZIP-Code-Level Rental Prices Across Boroughs (2023)", 
+    x = "Borough", 
+    y = "Average Rental Price ($)", 
+    fill = "Borough"
+  )
+dist_plot
+```
+
+##### Comment on the plot
+Manhattan has both the highest median rental price and the largest spread. There are also ZIP codes in Manhattan that appear as outliers, exceeding monthly rent of $5000. Brooklyn shows moderate prices with substantial variability. Queens, the Bronx, and Staten Island show lower median prices with less variability. The distribution highlights significant within-borough differences, especially in Manhattan and Brooklyn.
+
+
+
+
+
+
+
+
+
