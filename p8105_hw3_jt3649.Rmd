@@ -1,0 +1,104 @@
+---
+title: "p8105_hw3_jt3649"
+author: "Juan Tang"
+date: "2025-10-09"
+output: github_document
+---
+
+## Problem 1
+```{r setup}
+library(tidyverse)
+#load the dataset
+library(p8105.datasets)
+data("instacart")
+```
+
+### Instacart dataset description
+The instacart dataset contains `r nrow(instacart)` observations of `r ncol(instacart)` variables. Each row represents a single product from an order. The key variables include: `r paste(names(instacart))`. 
+
+#### Describing variables
+- `order_id` is order identifier. 
+- `product_id` and `product_name` are variables for product identifiers. 
+- `aisle_id` and `aisle` are aisle identifiers. 
+- `department_id` and `department` are department identifiers. 
+- `order_dow` is the day of the week that the order was placed. 
+- `order_hour_of_day` is the hour of the day that the order was placed. 
+- `days_since_prior_order` is the days since the last order. 
+
+#### Illustrative example of observations
+For example, the first observation shows that product "`r instacart$product_name[1]`" from the "`r instacart$aisle[1]`" aisle was ordered on day `r instacart$order_dow[1]` at hour `r instacart$order_hour_of_day[1]`.
+
+### Answer questions
+#### How many aisles are there, and which aisles are the most items ordered from?
+```{r aisle_count}
+aisle_count = instacart |>
+  count(aisle, sort = TRUE) #group the rows with same aisle together and count how many rows fall into each group
+
+n_aisle = nrow(aisle_count)
+```
+There are `r n_aisle` aisles in the dataset. The most items are ordered from: 
+1. `r aisle_count$aisle[1]` (`r aisle_count$n[1]` items)
+2. `r aisle_count$aisle[2]` (`r aisle_count$n[2]` items)
+3. `r aisle_count$aisle[3]` (`r aisle_count$n[3]` items)
+
+#### Make a plot that shows the number of items ordered in each aisle, limiting this to aisles with more than 10000 items ordered. 
+
+```{r aisle_plot}
+instacart |>
+  count(aisle) |>
+  #limit to aisle with more than 10000 items ordered
+  filter(n > 10000) |> 
+  mutate(aisle = fct_reorder(aisle, n)) |>
+  #x-axis is aisle, y-axis is the count
+  ggplot(aes(x = aisle, y = n)) + 
+  geom_col() + 
+  #the plot axis label cannot be seen clearly, hence flip the xy axis for better view
+  coord_flip() + 
+  labs(
+    title = "Number of Items Ordered by Aisle", 
+    x = "Aisle", 
+    y = "Number of Items Ordered"
+  )
+
+```
+
+#### Make a table showing the three most popular items in each of the aisles “baking ingredients”, “dog food care”, and “packaged vegetables fruits”.
+
+```{r popular_item}
+instacart |>
+  #include only aisle with character variable “baking ingredients”, “dog food care”, and “packaged vegetables fruits”
+  filter(aisle %in% c("baking ingredients", "dog food care", "packaged vegetables fruits")) |>
+  group_by(aisle, product_name) |>
+  #count the number of orders per product
+  summarize(n = n()) |>
+  #sort by aisle and count in descending order
+  arrange(aisle, desc(n)) |>
+  #select only for the top 3 items per aisle
+  slice_head(n = 3) |>
+  knitr::kable(
+    col.names = c("Aisle", "Product Name", "Number of Orders"), 
+    caption = "Three Most Popular Items in Selected Aisle"
+  )
+
+```
+
+#### Make a table showing the mean hour of the day at which Pink Lady Apples and Coffee Ice Cream are ordered on each day of the week
+```{r mean_hour}
+instacart |>
+  filter(product_name %in% c("Pink Lady Apples", "Coffee Ice Cream")) |>
+  # group by product and the day of week
+  group_by(product_name, order_dow) |>
+  # calculate the mean hour for each selected group
+  summarize(mean_hour = mean(order_hour_of_day)) |>
+  # reshape the data from long to wide
+  pivot_wider(
+    names_from = order_dow, # use the day of week as column names
+    values_from = mean_hour # value in the table is the mean hour
+  ) |>
+  knitr::kable(
+    digits = 2, # round to 2 decimal places
+    col.names = c("Product", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"), 
+    caption = "Mean Hour of Day for Orders on Each Day of the Week"
+  )
+```
+
