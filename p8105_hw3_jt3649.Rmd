@@ -403,9 +403,9 @@ avg_activity_plot
 
 Saving plots
 ```{r saving_plots}
-ggsave("results/age_distribution_plot.png", demo_plot, width = 12, height = 18)
-ggsave("results/total_activity_plot.png", total_activity_plot, width = 12, height = 18)
-ggsave("results/24h_activity_plot.png", avg_activity_plot, width = 12, height = 18)
+ggsave("results/age_distribution_plot.png", demo_plot)
+ggsave("results/total_activity_plot.png", total_activity_plot)
+ggsave("results/24h_activity_plot.png", avg_activity_plot)
 ```
 
 ##### Comment on plot
