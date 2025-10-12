@@ -51,7 +51,7 @@ instacart |>
   filter(n > 10000) |> 
   mutate(aisle = fct_reorder(aisle, n)) |>
   #x-axis is aisle, y-axis is the count
-  ggplot(aes(x = aisle, y = n)) + 
+  ggplot(aes(x = aisle, y = n, dpi = 300)) + 
   geom_col() + 
   #the plot axis label cannot be seen clearly, hence flip the xy axis for better view
   coord_flip() + 
@@ -227,7 +227,7 @@ Your plot should facilitate comparisons across boroughs. Comment on any signific
 ```{r rental_price_plot}
 # create a line plot showing rental price changes over time by ZIP code
 rental_plot = zillow_merged |>
-  ggplot(aes(x = date, y = price, 
+  ggplot(aes(x = date, y = price, dpi = 300,
              group = borough, # group by borough
              color = borough) # use color to identify borough
          ) + 
@@ -256,7 +256,7 @@ dist_plot = zillow_merged |>
   group_by(borough, zip_code) |>
   # calculate avg price per ZIP code
   summarize(avg_price = mean(price, na.rm = TRUE)) |>
-  ggplot(aes(x = borough, y = avg_price, fill = borough)) + 
+  ggplot(aes(x = borough, y = avg_price, fill = borough, dpi = 300)) + 
   geom_boxplot() + 
   labs(
     title = "Distribution of ZIP-Code-Level Rental Prices Across Boroughs (2023)", 
@@ -274,14 +274,139 @@ Manhattan has both the highest median rental price and the largest spread. There
 ##### Combine and save the plots
 ```{r combined_plot}
 combined_plot = rental_plot / dist_plot
-ggsave("results/combined_ziLlow_plot.pdf", combined_plot, width = 12, height = 18)
+ggsave("results/combined_ziLlow_plot.png", combined_plot, width = 12, height = 18)
 ```
 
 
 
+### Problem 3
+#### Import dataset
+```{r import_data}
+demo_df = read_csv("dataset/nhanes_covar.csv", skip = 4) |>
+  janitor::clean_names()
+accel_df = read_csv("dataset/nhanes_accel.csv") |>
+  janitor::clean_names()
+```
 
+#### Clean, tidy, and merge the datasets
+```{r clean_data}
+demo_clean = demo_df |>
+  drop_na() |> # remove rows with any missing values
+  filter(age >= 21) |> # only include participants aged 21 or older
+  mutate(
+    sex = factor(sex, level = c(1, 2), labels = c("Male", "Female")), # convert sex from level to factor
+    education = factor(education, levels = c(1, 2, 3), labels = c("Less than high school", "High school equivalent", "More than high school")), # convert education from levels to factor
+  )
 
+nhanes_merged = demo_clean |>
+  left_join(accel_df, by = c("seqn"))
+```
 
+#### Number of men and women table
+```{r demographic_table}
+demo_table = demo_clean |>
+  # group by education level and sex
+  group_by(education, sex) |>
+  # count the participants in each group
+  summarize(n = n()) |>
+  # use sex as col names and fill with number of men and women
+  pivot_wider(
+    names_from = sex, 
+    values_from = n
+  ) |>
+  # draw the table
+  knitr::kable(
+    caption = "Number of Participants by Education and Sex"
+  )
+demo_table
+```
 
+#### Age distribution Plot
+create a visualization of the age distributions for men and women in each education category. Comment on these items.
+```{r demographic_plot}
+demo_plot = demo_clean |>
+  ggplot(aes(x = age, fill = sex, dpi = 300)) + 
+           # create histogram with 5-year bins
+           geom_histogram(binwidth = 5, position = "dodge") + 
+           # create separate panels for each education level
+           facet_wrap(~education) +
+           labs(
+             title = "Age Distribution by Sex and Education Level", 
+             x = "Age", 
+             y = "Number of Participants", 
+             fill = "Sex"
+           )
+demo_plot
+```
 
+##### Comment on the plot
+The distribution of participants is relatively balanced between males and females across education levels "Less than high school" and "High school equivalent". Those with more than high school education are younger on average and with more male participants, while those with less than high school education tend to be older. This reflects the generational differences in educational attainment. Overall, more than high school education has the most participants of both sexes.  
 
+#### Total activity pattern
+```{r total_activiy}
+nhanes_activity = nhanes_merged |>
+  # create new variable (sum)
+  mutate(total_activity = rowSums(across(min1:min1440), na.rm = TRUE)
+         ) |>
+  select(seqn, sex, age, bmi, education, total_activity)
+nhanes_activity
+```
+
+##### Total activity plot
+```{r}
+total_activity_plot = nhanes_activity |>
+  ggplot(aes(x = age, y = total_activity, color = sex, dpi = 300)) + 
+  geom_point(alpha = 0.5) + 
+  geom_smooth() + # add trend line on scatterplot
+  facet_wrap(~education) + # create separate panel for each education level
+  labs(
+    title = "Total Daily Activity by Age, Sex, and Education Level", 
+    x = "Age (years)", 
+    y = "Total Activity (mins)", 
+    color = "Sex"
+  )
+total_activity_plot
+```
+##### Comment on plot
+Total activity generally decreases with age across all education levels. The decline in activity with age for both men and women is most pronounced in those with less than high school education. There is a steep decline in activity after age 40 (for men) and age 60 (for women) in this group. Females tend to have slightly higher activity level than males in  "High school equivalent" and "More than high school" groups. 
+In the more than high school group, the relative mild decline pattern suggests that higher education levels may be associated with more consistent and sustained physical activity across lifetime. 
+
+#### Average 24-hour activity
+```{r activity_pattern}
+avg_activity_plot = nhanes_merged |>
+  pivot_longer(
+    cols = starts_with("min"), # select all minute columns
+    names_to = "minute", # put col names in minute variable
+    values_to = "mins", # put values of mins to "mins" variable
+    names_prefix = "min" # remove "min" prefix
+  ) |>
+  mutate(minute = as.numeric(minute)) |> # convert minute from chr to numeric
+  group_by(education, sex, minute) |>
+  # calculate avg mins for each educational group
+  summarize(mean_min = mean(mins, na.rm = TRUE)) |>
+  ggplot(aes(x = minute, y = mean_min, color = sex, dpi = 300)) + 
+  geom_line(alpha = 0.7) + 
+  geom_smooth(se = FALSE, linewidth = 1.2) + # remove CI
+  facet_wrap(~education) +
+  labs(
+    title = "24-Hour Activity Pattern by Education Level and Sex", 
+    x = "Minute of Day", 
+    y = "Average Mins", 
+    color = "Sex"
+  ) + 
+  scale_x_continuous(
+    breaks = c(0, 360, 720, 1080, 1440), # set break points
+    labels = c("0:00", "6:00", "12:00", "18:00", "24:00") # add time labels
+  )
+avg_activity_plot
+```
+
+Saving plots
+```{r saving_plots}
+ggsave("results/age_distribution_plot.png", demo_plot, width = 12, height = 18)
+ggsave("results/total_activity_plot.png", total_activity_plot, width = 12, height = 18)
+ggsave("results/24h_activity_plot.png", avg_activity_plot, width = 12, height = 18)
+```
+
+##### Comment on plot
+All groups show a clear pattern with low activity during nighttime hours (~0:00-6:00) and higher activity during waking hours (daytime hours). Activity peaks occur around midday to early afternoon. Participants with more than high school education show slightly higher activity levels and longer activity time during waking hours (~7:00-23:00) compared to other two groups. Sex differences are relatively modest, though females show slightly higher activity in the late morning to early afternoon periods across all education levels.
