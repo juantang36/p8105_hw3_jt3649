@@ -134,8 +134,10 @@ zip_code_clean = zip_code |>
       str_detect(county, "Richmond") ~ "Richmond", 
       TRUE ~ county
       )
-  )
+  ) |>
+  distinct(zip_code, .keep_all = TRUE)
 ```
+
 
 Clean and tidy zillow rental data
 ```{r clean_rental_df}
